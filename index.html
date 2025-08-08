@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>王国大战 - 反转塔防</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="xp-window" id="gameWindow">
+    <div class="title-bar">
+      <div class="title">王国大战（反转塔防 · Windows XP 复古风）</div>
+      <div class="controls">
+        <div class="btn" title="最小化"></div>
+        <div class="btn" title="最大化"></div>
+        <div class="btn" title="关闭"></div>
+      </div>
+    </div>
+
+    <div class="window-body">
+      <!-- 左侧：单位与技能 -->
+      <div class="left-panel">
+        <div class="card">
+          <h3>出兵（花费金币）</h3>
+          <div class="unit-list">
+            <button class="unit-btn" data-type="goblin">
+              <div class="title">哥布林</div>
+              <div>快但脆</div>
+              <div class="cost">¥10</div>
+              <div class="cooldown-bar"></div>
+            </button>
+            <button class="unit-btn" data-type="brute">
+              <div class="title">巨兽</div>
+              <div>肉厚攻高</div>
+              <div class="cost">¥25</div>
+              <div class="cooldown-bar"></div>
+            </button>
+            <button class="unit-btn" data-type="assassin">
+              <div class="title">刺客</div>
+              <div>隐身渗透</div>
+              <div class="cost">¥20</div>
+              <div class="cooldown-bar"></div>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>技能（消耗能量）</h3>
+          <div class="skill-list">
+            <button class="skill-btn" data-skill="charge" title="让一个怪物短时间内加速冲锋">
+              <div class="title">冲锋</div>
+              <div>单体加速2s</div>
+              <div class="cost">能量18</div>
+              <div class="cooldown-bar"></div>
+            </button>
+            <button class="skill-btn" data-skill="heal" title="治疗一个怪物">
+              <div class="title">治疗</div>
+              <div>回复35%生命</div>
+              <div class="cost">能量22</div>
+              <div class="cooldown-bar"></div>
+            </button>
+            <button class="skill-btn" data-skill="summon" title="在目标附近召唤两只小怪">
+              <div class="title">召唤</div>
+              <div>+2小弟</div>
+              <div class="cost">能量30</div>
+              <div class="cooldown-bar"></div>
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>提示 & 策略</h3>
+          <div class="legend">
+            - 箭塔：单体伤害高，探测隐身较弱（近距离才看见）<br>
+            - 炮塔：群体伤害强，攻速慢，探测隐身很弱<br>
+            - 寒霜塔：减速明显，探测隐身较强<br>
+            - 分叉点的“↑/↓”为上/下路线，点击可实时切换<br>
+            - 让哥布林吃减速，刺客绕探测盲区，巨兽扛核心<br>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：画布与状态 -->
+      <div class="main-panel">
+        <div class="topbar">
+          <div class="stat gold"><div class="dot"></div><span>金币：</span><b id="goldText">0</b></div>
+          <div class="stat energy"><div class="dot"></div><span>能量：</span><b id="energyText">0</b> / <span id="energyMaxText">100</span></div>
+          <div class="stat core"><div class="dot"></div><span>敌方核心：</span><b id="coreText">0</b> HP</div>
+          <select class="xp-select" id="difficulty">
+            <option value="easy">难度：简单</option>
+            <option value="normal">难度：普通</option>
+            <option value="hard">难度：困难</option>
+          </select>
+          <button class="xp-btn primary" id="startBtn">开始/重开</button>
+          <div class="toolbar">
+            <button class="xp-btn" id="speedBtn" title="切换速度">速度×1</button>
+            <button class="xp-btn warn" id="helpBtn" title="查看帮助">帮助</button>
+          </div>
+        </div>
+
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="game"></canvas>
+          <!-- 分叉路线 UI（动态定位） -->
+          <div class="fork-ui" id="fork-F1">
+            <div class="fork-btn" data-fork="F1" data-dir="up">↑</div>
+            <div class="fork-btn" data-fork="F1" data-dir="down">↓</div>
+          </div>
+          <div class="fork-ui" id="fork-F3">
+            <div class="fork-btn" data-fork="F3" data-dir="up">↑</div>
+            <div class="fork-btn" data-fork="F3" data-dir="down">↓</div>
+          </div>
+
+          <!-- 结束/胜利弹窗 -->
+          <div class="overlay" id="overlay">
+            <div class="dialog">
+              <h2 id="overlayTitle">胜利！</h2>
+              <p id="overlayMsg">你摧毁了敌方核心。</p>
+              <div class="toolbar" style="justify-content:flex-end;">
+                <button class="xp-btn primary" id="overlayRestart">再来一把</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="start">开始</div>
+      <div>小贴士：能量会自动恢复，注意技能冷却；在分叉前切路线更有效！</div>
+    </div>
+  </div>
+
+<script src="script.js" defer></script>
+</body>
+</html>
