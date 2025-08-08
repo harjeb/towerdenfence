@@ -56,6 +56,7 @@
   .stat.gold .dot{background:var(--gold);}
   .stat.energy .dot{background:var(--energy);}
   .stat.core .dot{background:#ff3b3b;}
+  .stat.timer .dot{background:#888;}
   .xp-select{
     appearance:none; padding:4px 8px; border:1px solid #000; background:#fff; border-radius:2px;
     box-shadow: inset 1px 1px #fff, inset -1px -1px #808080;
@@ -86,12 +87,45 @@
     background:#fefefe; border:1px solid #000; border-radius:4px; padding:8px;
     box-shadow: inset 1px 1px #fff, inset -1px -1px #808080;
   }
-  .unit-btn.disabled, .skill-btn.disabled{opacity:0.5; pointer-events:none;}
+  .unit-btn.disabled, .skill-btn.disabled{opacity:0.6; background-image: linear-gradient(45deg, rgba(180,180,180,0.1) 25%, transparent 25%, transparent 75%, rgba(180,180,180,0.1) 75%, rgba(180,180,180,0.1)), linear-gradient(45deg, rgba(180,180,180,0.1) 25%, transparent 25%, transparent 75%, rgba(180,180,180,0.1) 75%, rgba(180,180,180,0.1));}
   .unit-btn .title, .skill-btn .title{font-weight:700;}
+  .unit-btn .title .unit-level { display: inline-block; margin-left: 4px; font-size: 11px; color: #fff; background: #888; padding: 1px 4px; border-radius: 3px; vertical-align: middle;}
   .cost{font-size:12px; color:#8a6d00;}
   .cooldown-bar{
     position:absolute; left:0; right:0; bottom:0; height:0; background:rgba(0,0,0,0.12);
     pointer-events:none;
+  }
+  .production-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.7);
+    transform-origin: bottom;
+    transform: scaleY(0);
+    transition: transform 0.2s linear;
+    pointer-events: none;
+  }
+  .upgrade-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    background-color: #4CAF50;
+    border: 1px solid #388E3C;
+    border-radius: 3px;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .upgrade-btn::after {
+    content: '▲';
+    font-size: 12px;
+  }
+  .upgrade-btn:hover {
+    background-color: #66BB6A;
   }
   .selected-skill{outline:2px dashed var(--xp-blue2);}
 
@@ -140,3 +174,63 @@
     .unit-list{grid-template-columns: repeat(3, 1fr);}
     .left-panel .card h3{font-size:15px;}
   }
+
+/* Interactable Objects */
+#interactables-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Pass clicks through to the canvas */
+  z-index: 2;
+}
+
+.interactable {
+  position: absolute;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  border-radius: 4px;
+  transition: transform 0.2s, opacity 0.3s;
+}
+
+.interactable.obstacle {
+  background-color: #8B4513; /* SaddleBrown */
+  background-image: linear-gradient(45deg, #A0522D 25%, transparent 25%, transparent 75%, #A0522D 75%, #A0522D),
+                    linear-gradient(-45deg, #A0522D 25%, transparent 25%, transparent 75%, #A0522D 75%, #A0522D);
+  background-size: 20px 20px;
+  border: 2px solid #654321;
+}
+
+.interactable.obstacle.destroyed {
+  opacity: 0;
+  transform: scale(0.8) rotate(-15deg);
+}
+
+.interactable.buff-point {
+  border: 3px solid gold;
+  border-radius: 50%;
+  background: rgba(255, 215, 0, 0.2);
+  box-shadow: 0 0 10px gold, inset 0 0 5px rgba(255, 215, 0, 0.5);
+}
+
+.interactable .health-bar, .interactable .capture-bar {
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  width: 100%;
+  height: 6px;
+  background-color: #555;
+  border: 1px solid #000;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.interactable .health-bar-inner, .interactable .capture-bar-inner {
+  height: 100%;
+  background-color: #28a745; /* Green for health */
+  transition: width 0.2s;
+}
+
+.interactable .capture-bar-inner {
+  background-color: #007bff; /* Blue for capture */
+}

@@ -24,22 +24,25 @@
           <h3>出兵（花费金币）</h3>
           <div class="unit-list">
             <button class="unit-btn" data-type="goblin">
-              <div class="title">哥布林</div>
-              <div>快但脆</div>
+              <div class="title">哥布林 <span class="unit-level" data-type="goblin">Lv.1</span></div>
               <div class="cost">¥10</div>
+              <div class="upgrade-btn" title="升级哥布林"></div>
               <div class="cooldown-bar"></div>
+              <div class="production-overlay"></div>
             </button>
             <button class="unit-btn" data-type="brute">
-              <div class="title">巨兽</div>
-              <div>肉厚攻高</div>
+              <div class="title">巨兽 <span class="unit-level" data-type="brute">Lv.1</span></div>
               <div class="cost">¥25</div>
+              <div class="upgrade-btn" title="升级巨兽"></div>
               <div class="cooldown-bar"></div>
+              <div class="production-overlay"></div>
             </button>
             <button class="unit-btn" data-type="assassin">
-              <div class="title">刺客</div>
-              <div>隐身渗透</div>
+              <div class="title">刺客 <span class="unit-level" data-type="assassin">Lv.1</span></div>
               <div class="cost">¥20</div>
+              <div class="upgrade-btn" title="升级刺客"></div>
               <div class="cooldown-bar"></div>
+              <div class="production-overlay"></div>
             </button>
           </div>
         </div>
@@ -86,6 +89,7 @@
           <div class="stat gold"><div class="dot"></div><span>金币：</span><b id="goldText">0</b></div>
           <div class="stat energy"><div class="dot"></div><span>能量：</span><b id="energyText">0</b> / <span id="energyMaxText">100</span></div>
           <div class="stat core"><div class="dot"></div><span>敌方核心：</span><b id="coreText">0</b> HP</div>
+          <div class="stat timer"><div class="dot"></div><span>剩余时间：</span><b id="timerText">00:00</b></div>
           <select class="xp-select" id="difficulty">
             <option value="easy">难度：简单</option>
             <option value="normal">难度：普通</option>
@@ -100,6 +104,8 @@
 
         <div class="canvas-wrap" id="canvasWrap">
           <canvas id="game"></canvas>
+          <!-- 可交互对象容器 -->
+          <div id="interactables-layer"></div>
           <!-- 分叉路线 UI（动态定位） -->
           <div class="fork-ui" id="fork-F1">
             <div class="fork-btn" data-fork="F1" data-dir="up">↑</div>

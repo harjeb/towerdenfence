@@ -1,35 +1,169 @@
 (function(){
-  // 基础世界坐标
-  const WORLD = { w: 1000, h: 560 };
+    // =================================================
+    // --- I. CORE DATA STRUCTURES ---
+    // =================================================
 
-  // 画布 & 尺寸
-  const canvas = document.getElementById('game');
-  const wrap = document.getElementById('canvasWrap');
-  const ctx = canvas.getContext('2d');
-  let scale = 1, offsetX = 0, offsetY = 0;
+    /**
+     * A deep, cloneable object containing all static game data.
+     * This object will be cloned and modified by playerProfile upgrades at the start of a game session.
+     */
+    const FINAL_GAME_CONSTANTS = {
+        ROLES: {
+            TANK: 'Tank', DPS: 'DPS', SUPPORT: 'Support'
+        },
+        TAGS: {
+            GROUND: 'Ground', FLYING: 'Flying', ARMORED: 'Armored', BIOLOGICAL: 'Biological', MECHANICAL: 'Mechanical'
+        },
+        DAMAGE_TYPES: {
+            PHYSICAL: 'Physical', EXPLOSIVE: 'Explosive', ENERGY: 'Energy'
+        },
+        ARMOR_TYPES: {
+            LIGHT: 'Light', HEAVY: 'Heavy', SHIELDED: 'Shielded', UNARMORED: 'Unarmored', STRUCTURE: 'Structure'
+        },
+        DAMAGE_MODIFIERS: {}, // Will be populated below
+        UNIT_TYPES: {}, // Will be populated below
+        TOWER_TYPES: {}, // Will be populated below
+        TACTICAL_SKILLS: {}, // Will be populated below
+        TECH_TREE_DATA: {}, // Will be populated below
+        LEVEL_DATA: [] // Will be populated below
+    };
 
-  // UI refs
-  const goldText = document.getElementById('goldText');
-  const energyText = document.getElementById('energyText');
-  const energyMaxText = document.getElementById('energyMaxText');
-  const coreText = document.getElementById('coreText');
-  const difficultySel = document.getElementById('difficulty');
-  const startBtn = document.getElementById('startBtn');
-  const helpBtn = document.getElementById('helpBtn');
-  const speedBtn = document.getElementById('speedBtn');
-  const overlay = document.getElementById('overlay');
-  const overlayTitle = document.getElementById('overlayTitle');
-  const overlayMsg = document.getElementById('overlayMsg');
-  const overlayRestart = document.getElementById('overlayRestart');
-  const forkF1 = document.getElementById('fork-F1');
-  const forkF3 = document.getElementById('fork-F3');
+    // Populate dynamic parts of the constants
+    const C = FINAL_GAME_CONSTANTS; // Shorthand
+    C.DAMAGE_MODIFIERS = {
+        [C.DAMAGE_TYPES.PHYSICAL]: { [C.ARMOR_TYPES.HEAVY]: 1.0, [C.ARMOR_TYPES.LIGHT]: 1.0, [C.ARMOR_TYPES.UNARMORED]: 1.0, [C.ARMOR_TYPES.STRUCTURE]: 0.75, [C.ARMOR_TYPES.SHIELDED]: 0.5 },
+        [C.DAMAGE_TYPES.EXPLOSIVE]: { [C.ARMOR_TYPES.HEAVY]: 0.75, [C.ARMOR_TYPES.LIGHT]: 1.5, [C.ARMOR_TYPES.UNARMORED]: 1.0, [C.ARMOR_TYPES.STRUCTURE]: 1.25, [C.ARMOR_TYPES.SHIELDED]: 0.75 },
+        [C.DAMAGE_TYPES.ENERGY]: { [C.ARMOR_TYPES.HEAVY]: 0.5, [C.ARMOR_TYPES.LIGHT]: 0.75, [C.ARMOR_TYPES.UNARMORED]: 1.0, [C.ARMOR_TYPES.STRUCTURE]: 1.0, [C.ARMOR_TYPES.SHIELDED]: 2.0 }
+    };
 
-  const unitButtons = Array.from(document.querySelectorAll('.unit-btn'));
-  const skillButtons = Array.from(document.querySelectorAll('.skill-btn'));
+    C.UNIT_TYPES = {
+        stoneman: {
+            name: "石巨人", role: C.ROLES.TANK, tags: [C.TAGS.GROUND, C.TAGS.ARMORED, C.TAGS.BIOLOGICAL], armorType: C.ARMOR_TYPES.HEAVY, productionTime: 10,
+            attack: { damage: 20, damageType: C.DAMAGE_TYPES.PHYSICAL, range: 1, attackSpeed: 1.5 },
+            upgradeTree: [
+                { hp: 250, speed: 0.8, cost: 200 },
+                { hp: 350, speed: 0.8, cost: 300 },
+                { hp: 480, speed: 0.8, cost: 0 }
+            ],
+            color: '#7f5539', r: 12
+        },
+        archer: {
+            name: "弓箭手", role: C.ROLES.DPS, tags: [C.TAGS.GROUND, C.TAGS.BIOLOGICAL], armorType: C.ARMOR_TYPES.LIGHT, productionTime: 7,
+            attack: { damage: 15, damageType: C.DAMAGE_TYPES.PHYSICAL, range: 5, attackSpeed: 1.0 },
+             upgradeTree: [
+                { hp: 80, speed: 1.1, cost: 150 },
+                { hp: 110, speed: 1.1, cost: 250 },
+                { hp: 150, speed: 1.2, cost: 0 }
+            ],
+            color: '#2b8a3e', r: 8
+        }
+    };
 
-  // 难度与地图（固定路径 + 不同塔阵）
-  const MAP = {
-    nodes: {
+    C.TOWER_TYPES = {
+        arrow_tower: {
+            name: "箭塔", armorType: C.ARMOR_TYPES.STRUCTURE, hp: 500,
+            attack: { damage: 15, damageType: C.DAMAGE_TYPES.PHYSICAL, range: 6, attackSpeed: 1.0, canTarget: [C.TAGS.GROUND, C.TAGS.FLYING] }
+        },
+        cannon_tower: {
+            name: "炮塔", armorType: C.ARMOR_TYPES.STRUCTURE, hp: 800,
+            attack: { damage: 40, damageType: C.DAMAGE_TYPES.EXPLOSIVE, range: 5, attackSpeed: 2.0, canTarget: [C.TAGS.GROUND] }
+        }
+    };
+
+    C.TACTICAL_SKILLS = {
+        SKL_HEAL_AURA: {
+            skillId: "SKL_HEAL_AURA", name: "治疗光环", cost: 200, cooldown: 45, targetingType: "area",
+            effects: [ { type: "HEAL_OVER_TIME", amountPerSecond: 20, duration: 10, radius: 150 } ]
+        },
+        SKL_EMP: {
+            skillId: "SKL_EMP", name: "EMP", cost: 150, cooldown: 60, targetingType: "area",
+            effects: [
+                { type: "DISABLE_ATTACK", duration: 8, radius: 120 },
+                { type: "DAMAGE_SHIELD", amount: 300, radius: 120 }
+            ]
+        }
+    };
+
+    C.TECH_TREE_DATA = {
+        unlock_sapper: {
+            id: "unlock_sapper", type: "UNLOCK_UNIT", name: "解锁工兵", cost: 5, dependencies: [],
+            payload: { unitId: "sapper" }
+        },
+        global_hp_boost_1: {
+            id: "global_hp_boost_1", type: "PERMANENT_UPGRADE", name: "全局HP+5%", cost: 3, dependencies: [],
+            payload: { target: "units", filter: "all", stat: "hp", value: 0.05, type: "percent" }
+        }
+    };
+
+    C.LEVEL_DATA = [
+        {
+            levelId: 1, timeLimit: 180,
+            mapLayout: { /* ... */ },
+            enemySetup: [ { type: "arrow_tower", position: { x: 300, y: 100 } } ]
+        }
+    ];
+
+
+    /**
+     * The central, dynamic state of the game.
+     */
+    const gameState = {
+        player: {
+            resources: 100,
+            units: [],
+            towers: [] // Enemy towers
+        },
+        map: {
+            interactables: [],
+            pathfindingGrid: [],
+        },
+        sessionConstants: {}, // Holds the modified, session-specific constants after profile upgrades
+        gameTime: 0,
+        currentLevelId: 1,
+        levelTimeLeft: 0,
+        isGameOver: false,
+        running: false,
+        timeScale: 1,
+        unitLevels: {}, // In-game upgrades: { stoneman: 0, archer: 1, ... }
+        productionQueue: [], // { unitType: 'stoneman', timeLeft: 3.5, ... }
+        skillCooldowns: {}, // { SKL_HEAL_AURA: 167... , ... }
+        activeEffects: [], // Active skill effects on the map
+        forkChoice: { F1: 'up', F3: 'down' }, // Temporary
+        activeSkill: null,
+    };
+
+    // --- Canvas & UI Refs ---
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    let scale = 1, offsetX = 0, offsetY = 0;
+    
+    // UI refs
+    const goldText = document.getElementById('goldText');
+    const energyText = document.getElementById('energyText');
+    const coreText = document.getElementById('coreText');
+    const timerText = document.getElementById('timerText');
+    const startBtn = document.getElementById('startBtn');
+    const unitButtons = Array.from(document.querySelectorAll('.unit-btn'));
+    const skillButtons = Array.from(document.querySelectorAll('.skill-btn'));
+
+    function resize(){
+        const wrap = document.getElementById('canvasWrap');
+        const w = wrap.clientWidth;
+        const h = Math.max(320, Math.min(720, Math.floor(w*0.56)));
+        canvas.width = Math.floor(w);
+        canvas.height = Math.floor(h);
+        const sx = canvas.width / 1000;
+        const sy = canvas.height / 560;
+        scale = Math.min(sx, sy);
+        offsetX = (canvas.width - 1000 * scale)/2;
+        offsetY = (canvas.height - 560 * scale)/2;
+    }
+    window.addEventListener('resize', resize);
+
+    function toScreen(p){ return { x: Math.round(offsetX + p.x*scale), y: Math.round(offsetY + p.y*scale) }; }
+    function toWorld(x,y){ return { x: (x - offsetX)/scale, y: (y - offsetY)/scale }; }
+
+    const MAP_NODES = {
       S:  {id:'S',  x: 60,  y:280, next:'N1'},
       N1: {id:'N1', x:220,  y:280, next:'F1'},
       F1: {id:'F1', x:320,  y:280, edges:{ up:'U1', down:'L1' }},
@@ -42,772 +176,584 @@
       U3: {id:'U3', x:900,  y:200, next:'CORE'},
       L3: {id:'L3', x:900,  y:360, next:'CORE'},
       CORE: {id:'CORE', x:950, y:280}
-    },
-    forks: ['F1','F3'],
-    // 预绘路径（简单把所有可能线段都画出来）
-    edges: [
-      ['S','N1'],['N1','F1'],
-      ['F1','U1'],['U1','U2'],['U2','N4'],
-      ['F1','L1'],['L1','L2'],['L2','N4'],
-      ['N4','F3'],
-      ['F3','U3'],['U3','CORE'],
-      ['F3','L3'],['L3','CORE'],
-    ],
-    difficulties: {
-      easy: {
-        coreHP: 120,
-        energyMax: 100, energyRegen: 12,
-        goldStart: 80, goldRegen: 2.0,
-        towers: [
-          {type:'arrow', x:360, y:240},
-          {type:'cannon',x:600, y:280},
-          {type:'frost', x:760, y:240},
-          {type:'arrow', x:880, y:300},
-        ]
+    };
+
+    function getNextFrom(nodeId){
+        const n = MAP_NODES[nodeId];
+        if(!n) return null;
+        if(n.edges){
+          const dir = gameState.forkChoice[nodeId] || 'up';
+          return n.edges[dir];
+        }
+        return n.next || null;
+    }
+
+    function arriveNode(unit, nodeId){
+        unit.prev = nodeId;
+        const next = getNextFrom(nodeId);
+        unit.next = next;
+        if (!next) {
+            // Reached the core
+            console.log(`${unit.name} reached the core.`);
+            // Logic to damage core can be handled elsewhere
+        }
+    }
+
+    // =================================================
+    // --- II. METAGAME & PERSISTENCE ---
+    // =================================================
+
+    const defaultPlayerProfile = {
+      profileId: "player123",
+      playerName: "Arch-Strategist",
+      xp: 0,
+      level: 1,
+      techPoints: 0,
+      unlockedUnits: ["stoneman", "archer"],
+      unlockedSkills: [],
+      permanentUpgrades: {
+        units: { "stoneman": { hp: 50 } },
+        skills: {},
+        global: { "startingResources": 100 }
       },
-      normal: {
-        coreHP: 140,
-        energyMax: 100, energyRegen: 11,
-        goldStart: 70, goldRegen: 1.6,
-        towers: [
-          {type:'arrow', x:300, y:240},
-          {type:'cannon',x:470, y:240},
-          {type:'frost', x:620, y:220},
-          {type:'arrow', x:700, y:320},
-          {type:'cannon',x:820, y:320},
-          {type:'frost', x:900, y:260},
-        ]
-      },
-      hard: {
-        coreHP: 160,
-        energyMax: 100, energyRegen: 10,
-        goldStart: 60, goldRegen: 1.2,
-        towers: [
-          {type:'arrow', x:260, y:260},
-          {type:'cannon',x:450, y:210},
-          {type:'cannon',x:450, y:350},
-          {type:'frost', x:600, y:240},
-          {type:'arrow', x:680, y:320},
-          {type:'frost', x:760, y:240},
-          {type:'cannon',x:820, y:280},
-          {type:'arrow', x:900, y:310},
-        ]
-      }
-    }
-  };
-
-  // 单位 & 塔类型
-  const UNITS = {
-    goblin: { name:'哥布林', cost:10, speed:90,  hp:60,  dmg:8,  r:8,  color:'#2b8a3e' },
-    brute:  { name:'巨兽',   cost:25, speed:50,  hp:280, dmg:25, r:12, color:'#7f5539' },
-    assassin:{name:'刺客',   cost:20, speed:85,  hp:90,  dmg:16, r:9,  color:'#343a40', stealth:true },
-    minion: { name:'小弟',   cost:0,  speed:70,  hp:35,  dmg:4,  r:7,  color:'#6a994e' } // 召唤
-  };
-  const TOWERS = {
-    arrow: { name:'箭塔', color:'#2f4f4f', range:120, detectRatio:0.50, fireCd:0.35, dmg:18, bulletSpeed:320, aoe:0, slow:0 },
-    cannon:{ name:'炮塔', color:'#6b3400', range:140, detectRatio:0.30, fireCd:1.2,  dmg:35, bulletSpeed:230, aoe:40, slow:0 },
-    frost: { name:'寒霜', color:'#006d77', range:110, detectRatio:0.70, fireCd:1.2,  dmg:8,  bulletSpeed:280, aoe:0, slow:0.40, slowDur:1.8 }
-  };
-
-  // 技能
-  const SKILLS = {
-    charge: { name:'冲锋', cost:18, cd:6,  apply: (m)=>{ m.buffs.charge = 2.0; m.buffs.chargeT = 2.0; flash(m, '#fff', 0.6);} },
-    heal:   { name:'治疗', cost:22, cd:8,  apply: (m)=>{ let v = Math.floor(m.maxHp*0.35); healMonster(m, v); flash(m, '#66ff99', 0.5);} },
-    summon: { name:'召唤', cost:30, cd:12, apply: (m)=>{ summonMinionsNear(m, 2); flash(m, '#ffd166', 0.5);} },
-  };
-
-  // 状态
-  let state = {};
-  function resetState(diffKey){
-    const mapConf = MAP.difficulties[diffKey];
-    state = {
-      running: true,
-      timeScale: 1,
-      t: 0,
-      difficulty: diffKey,
-      gold: mapConf.goldStart,
-      goldFloat: mapConf.goldStart,
-      goldRegen: mapConf.goldRegen,
-      energy: mapConf.energyMax * 0.5,
-      energyMax: mapConf.energyMax,
-      energyRegen: mapConf.energyRegen,
-      coreHP: mapConf.coreHP,
-      coreHPMax: mapConf.coreHP,
-      monsters: [],
-      bullets: [],
-      towers: mapConf.towers.map(t => makeTower(t)),
-      forkChoice: { F1:'up', F3:'down' }, // 默认上/下
-      activeSkill: null,
-      skillCd: { charge:0, heal:0, summon:0 },
-      selectedMonsterId: null,
-      unitCd: { goblin:0, brute:0, assassin:0 },
+      unlockedTechs: []
     };
-    energyMaxText.textContent = state.energyMax;
-    updateForkUI();
-  }
 
-  function makeTower(conf){
-    const base = TOWERS[conf.type];
-    return {
-      id: uid(),
-      type: conf.type,
-      x: conf.x, y: conf.y,
-      range: base.range,
-      detect: base.range * base.detectRatio,
-      fireCd: base.fireCd,
-      cd: Math.random()*base.fireCd*0.5,
-      dmg: base.dmg,
-      bulletSpeed: base.bulletSpeed,
-      aoe: base.aoe||0,
-      slow: base.slow||0,
-      slowDur: base.slowDur||0,
-      color: base.color,
-      targetId: null,
+    function loadPlayerProfile() {
+        const savedProfile = localStorage.getItem('playerProfile');
+        return savedProfile ? JSON.parse(savedProfile) : JSON.parse(JSON.stringify(defaultPlayerProfile));
     }
-  }
 
-  // 工具
-  let _uid=1; function uid(){return _uid++;}
-  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-  function dist(a,b,c,d){ const dx=a-c, dy=b-d; return Math.hypot(dx,dy); }
-  function lerp(a,b,t){ return a+(b-a)*t; }
-
-  // 路径
-  const nodes = MAP.nodes;
-  const forks = MAP.forks;
-
-  // 坐标转换
-  function resize(){
-    const w = wrap.clientWidth;
-    const h = Math.max(320, Math.min(720, Math.floor(w*0.56)));
-    canvas.width = Math.floor(w);
-    canvas.height = Math.floor(h);
-    const sx = canvas.width / WORLD.w;
-    const sy = canvas.height / WORLD.h;
-    scale = Math.min(sx, sy);
-    // 居中
-    offsetX = (canvas.width - WORLD.w * scale)/2;
-    offsetY = (canvas.height - WORLD.h * scale)/2;
-
-    // 更新分叉按钮位置
-    positionForkUI();
-  }
-  window.addEventListener('resize', resize);
-
-  function toScreen(p){ return { x: Math.round(offsetX + p.x*scale), y: Math.round(offsetY + p.y*scale) }; }
-  function toWorld(x,y){ return { x: (x - offsetX)/scale, y: (y - offsetY)/scale }; }
-
-  // 分叉 UI
-  function updateForkUI(){
-    // 设置高亮
-    document.querySelectorAll('.fork-btn').forEach(btn=>{
-      const f = btn.dataset.fork;
-      const dir = btn.dataset.dir;
-      btn.classList.toggle('active', state.forkChoice[f]===dir);
-    });
-  }
-  function positionForkUI(){
-    // F1, F3
-    [ ['F1',forkF1], ['F3',forkF3] ].forEach(([id,el])=>{
-      const p = toScreen(nodes[id]);
-      el.style.left = p.x+'px';
-      el.style.top = (p.y-26)+'px';
-    });
-  }
-
-  // 怪物
-  function spawnUnit(typeKey, near=null){
-    const t = UNITS[typeKey];
-    if(!near){
-      if(state.gold < t.cost) return false;
-      if(state.unitCd[typeKey] > 0) return false;
-      state.gold -= t.cost;
-      state.goldFloat = state.gold;
-      // 冷却
-      state.unitCd[typeKey] = (typeKey==='goblin'?0.4 : typeKey==='assassin'?0.7 : 1.0);
+    function savePlayerProfile(profile) {
+        localStorage.setItem('playerProfile', JSON.stringify(profile));
+        console.log("Player profile saved.");
     }
-    const m = {
-      id: uid(),
-      type: typeKey,
-      x: near? near.x : nodes.S.x,
-      y: near? near.y : nodes.S.y,
-      r: t.r,
-      color: t.color,
-      hp: t.hp, maxHp: t.hp,
-      speed: t.speed,
-      baseSpeed: t.speed,
-      dmg: t.dmg,
-      stealth: !!t.stealth,
-      buffs: { charge:1.0, chargeT:0, slow:1.0, slowT:0 },
-      selected: false,
-      prev: 'S',
-      next: nodes['S'].next,
-      alive: true,
-      reached: false
-    };
-    state.monsters.push(m);
-    return true;
-  }
 
-  function getNextFrom(nodeId){
-    const n = nodes[nodeId];
-    if(!n) return null;
-    if(n.edges){
-      const dir = state.forkChoice[nodeId] || 'up';
-      return n.edges[dir];
-    }
-    return n.next || null;
-  }
+    function applyPlayerProfile(profile) {
+        const sessionConstants = JSON.parse(JSON.stringify(FINAL_GAME_CONSTANTS));
 
-  function arriveNode(monster, nodeId){
-    monster.prev = nodeId;
-    const next = getNextFrom(nodeId);
-    monster.next = next;
-  }
-
-  // 技能效果
-  function flash(m, color, dur){
-    m.flash = { color, t: dur||0.4, full: dur||0.4 };
-  }
-  function healMonster(m, amount){
-    m.hp = Math.min(m.maxHp, m.hp + amount);
-  }
-  function summonMinionsNear(m, count){
-    for(let i=0;i<count;i++){
-      const angle = Math.random()*Math.PI*2;
-      const r = 12+Math.random()*14;
-      const pos = { x: m.x + Math.cos(angle)*r, y: m.y + Math.sin(angle)*r };
-      spawnUnit('minion', pos);
-    }
-  }
-
-  // 射击子弹
-  function makeBullet(tower, target){
-    const t = TOWERS[tower.type];
-    return {
-      id: uid(),
-      type: tower.type,
-      x: tower.x, y: tower.y,
-      speed: tower.bulletSpeed,
-      dmg: tower.dmg,
-      aoe: tower.aoe || 0,
-      slow: tower.slow || 0,
-      slowDur: tower.slowDur || 0,
-      targetId: target.id,
-      life: 4 // 最多飞4秒
-    };
-  }
-
-  // 塔视野
-  function canTarget(tower, m){
-    const d = dist(tower.x, tower.y, m.x, m.y);
-    if(d > tower.range) return false;
-    if(!m.alive) return false;
-    if(m.stealth){
-      // 只有进入探测范围才可见
-      return d <= tower.detect;
-    }
-    return true;
-  }
-
-  // 点击交互
-  let pointer = { x:0, y:0, worldX:0, worldY:0, down:false };
-  canvas.addEventListener('pointerdown', e=>{
-    const rect = canvas.getBoundingClientRect();
-    pointer.x = e.clientX - rect.left;
-    pointer.y = e.clientY - rect.top;
-    const p = toWorld(pointer.x, pointer.y);
-    pointer.worldX = p.x; pointer.worldY = p.y;
-    pointer.down = true;
-
-    // 如果选择了技能 -> 施放
-    if(state.activeSkill){
-      const skill = SKILLS[state.activeSkill];
-      if(state.energy < skill.cost || state.skillCd[state.activeSkill] > 0){
-        // 不足
-      }else{
-        const m = pickMonsterAt(pointer.worldX, pointer.worldY, 18);
-        if(m){
-          // 施放
-          skill.apply(m);
-          state.energy = Math.max(0, state.energy - skill.cost);
-          state.skillCd[state.activeSkill] = skill.cd;
+        if (profile.permanentUpgrades.global.startingResources) {
+            gameState.player.resources += profile.permanentUpgrades.global.startingResources;
         }
-      }
-      return;
-    }
 
-    // 无技能：选择怪物
-    const m = pickMonsterAt(pointer.worldX, pointer.worldY, 18);
-    setSelected(m ? m.id : null);
-  });
-  canvas.addEventListener('pointerup', ()=> pointer.down=false);
-
-  function pickMonsterAt(wx, wy, radius){
-    let best=null, bestD=999;
-    for(const m of state.monsters){
-      if(!m.alive) continue;
-      const d = dist(wx, wy, m.x, m.y);
-      if(d <= (radius/scale + m.r) && d < bestD){
-        best = m; bestD = d;
-      }
-    }
-    return best;
-  }
-  function setSelected(id){
-    state.selectedMonsterId = id;
-    state.monsters.forEach(m=> m.selected = (m.id===id));
-  }
-
-  // 分叉按钮
-  document.querySelectorAll('.fork-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      if(!state.running) return;
-      const fork = btn.dataset.fork;
-      const dir = btn.dataset.dir;
-      state.forkChoice[fork] = dir;
-      updateForkUI();
-    });
-  });
-
-  // 出兵按钮
-  unitButtons.forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      if(!state.running) return;
-      const type = btn.dataset.type;
-      spawnUnit(type);
-    });
-  });
-
-  // 技能按钮
-  skillButtons.forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const skill = btn.dataset.skill;
-      if(state.activeSkill === skill){
-        state.activeSkill = null;
-      }else{
-        state.activeSkill = skill;
-      }
-      refreshSkillBtnUI();
-    });
-  });
-  function refreshSkillBtnUI(){
-    skillButtons.forEach(btn=>{
-      btn.classList.toggle('selected-skill', state.activeSkill===btn.dataset.skill);
-    });
-  }
-
-  // 顶部按钮
-  startBtn.addEventListener('click', ()=>{
-    resetState(difficultySel.value);
-  });
-  helpBtn.addEventListener('click', ()=>{
-    showOverlay('帮助', 
-      '你是进攻方！花金币出兵（哥布林/巨兽/刺客），并在分叉处切换上/下路线。消耗能量释放技能（冲锋/治疗/召唤），能量会自动恢复。刺客具隐身能力，只有在较短探测范围内才会被塔锁定。目标：让足够多的怪物成功到达右侧核心并将其摧毁！'
-    );
-  });
-  speedBtn.addEventListener('click', ()=>{
-    state.timeScale = (state.timeScale===1? 1.5 : state.timeScale===1.5? 2 : 1);
-    speedBtn.textContent = '速度×'+state.timeScale;
-  });
-
-  overlayRestart.addEventListener('click', ()=>{
-    overlay.classList.remove('show');
-    resetState(difficultySel.value);
-  });
-
-  function showOverlay(title, msg){
-    overlayTitle.textContent = title;
-    overlayMsg.textContent = msg;
-    overlay.classList.add('show');
-  }
-
-  // 更新循环
-  let last = performance.now();
-  function loop(now){
-    const dtReal = Math.min(0.05, (now - last)/1000);
-    last = now;
-    const dt = dtReal * (state.timeScale||1);
-
-    if(state.running){
-      state.t += dt;
-
-      // 资源再生
-      state.energy = clamp(state.energy + state.energyRegen*dt, 0, state.energyMax);
-      state.goldFloat += state.goldRegen*dt;
-      const newGold = Math.floor(state.goldFloat);
-      if(newGold !== state.gold){
-        state.gold = newGold;
-      }
-
-      // 冷却
-      Object.keys(state.unitCd).forEach(k=> state.unitCd[k] = Math.max(0, state.unitCd[k]-dt));
-      Object.keys(state.skillCd).forEach(k=> state.skillCd[k] = Math.max(0, state.skillCd[k]-dt));
-      updateCooldownBars();
-
-      // 怪物更新
-      for(const m of state.monsters){
-        if(!m.alive) continue;
-        // buff/slow
-        if(m.buffs.chargeT>0){
-          m.buffs.chargeT -= dt;
-          if(m.buffs.chargeT<=0){ m.buffs.chargeT=0; m.buffs.charge=1.0; }
-        }
-        if(m.buffs.slowT>0){
-          m.buffs.slowT -= dt;
-          if(m.buffs.slowT<=0){ m.buffs.slowT=0; m.buffs.slow=1.0; }
-        }
-        // 移动
-        if(m.next){
-          const n = nodes[m.next];
-          const dx = n.x - m.x, dy = n.y - m.y;
-          const d = Math.hypot(dx,dy);
-          let spd = m.baseSpeed * m.buffs.charge * m.buffs.slow;
-          const mv = spd * dt;
-          if(d <= mv){
-            // 到点
-            m.x = n.x; m.y = n.y;
-            if(n.id === 'CORE'){
-              // 击中核心
-              hitCore(m);
-              m.alive = false;
-              m.reached = true;
-              continue;
+        for (const unitId in profile.permanentUpgrades.units) {
+            if (sessionConstants.UNIT_TYPES[unitId]) {
+                const upgrades = profile.permanentUpgrades.units[unitId];
+                sessionConstants.UNIT_TYPES[unitId].upgradeTree.forEach(level => {
+                    for (const stat in upgrades) {
+                        if (level[stat] !== undefined) level[stat] += upgrades[stat];
+                    }
+                });
             }
-            arriveNode(m, n.id);
-          }else{
-            m.x += dx/d * mv;
-            m.y += dy/d * mv;
-          }
         }
-        // 闪光
-        if(m.flash){
-          m.flash.t -= dt;
-          if(m.flash.t<=0) m.flash=null;
-        }
-      }
-
-      // 塔更新
-      for(const t of state.towers){
-        t.cd -= dt;
-        // 锁定或寻找目标
-        let target = null;
-        if(t.targetId){
-          target = state.monsters.find(m=>m.id===t.targetId && m.alive && canTarget(t,m));
-        }
-        if(!target){
-          t.targetId = null;
-          let best=null, bestD=1e9;
-          for(const m of state.monsters){
-            if(!m.alive) continue;
-            if(!canTarget(t,m)) continue;
-            const d = dist(t.x,t.y,m.x,m.y);
-            if(d<bestD){ best=m; bestD=d; }
-          }
-          target = best;
-          if(target) t.targetId = target.id;
-        }
-        // 开火
-        if(target && t.cd<=0){
-          state.bullets.push( makeBullet(t, target) );
-          t.cd = TOWERS[t.type].fireCd;
-        }
-      }
-
-      // 子弹更新
-      for(const b of state.bullets){
-        if(b.life<=0) continue;
-        b.life -= dt;
-        let target = state.monsters.find(m=>m.id===b.targetId && m.alive);
-        let tx,ty;
-        if(target){
-          tx=target.x; ty=target.y;
-        }else{
-          // 没目标就直线飞（这里简单处理：停滞）
-          b.life = 0;
-          continue;
-        }
-        const dx = tx - b.x, dy = ty - b.y;
-        const d = Math.hypot(dx,dy);
-        const mv = b.speed * dt;
-        if(d <= mv+2){
-          // 命中
-          if(b.aoe>0){
-            for(const m of state.monsters){
-              if(!m.alive) continue;
-              const dd = dist(b.x,b.y,m.x,m.y);
-              if(dd <= b.aoe){
-                damageMonster(m, b.dmg);
-              }
+        
+        for (const skillId in profile.permanentUpgrades.skills) {
+            if (sessionConstants.TACTICAL_SKILLS[skillId]) {
+                const upgrades = profile.permanentUpgrades.skills[skillId];
+                 for (const stat in upgrades) {
+                    if (sessionConstants.TACTICAL_SKILLS[skillId][stat] !== undefined) {
+                        sessionConstants.TACTICAL_SKILLS[skillId][stat] += upgrades[stat];
+                    }
+                }
             }
-          }else{
-            damageMonster(target, b.dmg);
-            if(b.slow>0 && target.alive){
-              target.buffs.slow = Math.min(target.buffs.slow, 1-b.slow);
-              target.buffs.slowT = Math.max(target.buffs.slowT, b.slowDur);
-            }
-          }
-          b.life = 0;
-        }else{
-          b.x += dx/d * mv;
-          b.y += dy/d * mv;
         }
-      }
 
-      // 清理
-      state.monsters = state.monsters.filter(m=> m.alive);
-      state.bullets = state.bullets.filter(b=> b.life>0);
-
-      // UI
-      goldText.textContent = state.gold;
-      energyText.textContent = Math.floor(state.energy);
-      coreText.textContent = state.coreHP;
-
-      // 结束
-      if(state.coreHP <= 0){
-        state.running = false;
-        showOverlay('胜利！', '你摧毁了敌方核心！');
-      }
+        console.log("Player profile bonuses applied to session constants.");
+        return sessionConstants;
     }
 
-    // 绘制
-    draw();
-    requestAnimationFrame(loop);
-  }
+    function purchaseTech(profile, techId) {
+        const techData = FINAL_GAME_CONSTANTS.TECH_TREE_DATA[techId];
+        if (!techData) {
+            console.error(`Tech ${techId} not found.`);
+            return false;
+        }
+        if (profile.techPoints < techData.cost) {
+            console.log("Not enough tech points.");
+            return false;
+        }
+        // Check dependencies
+        for (const depId of techData.dependencies) {
+            if (!profile.unlockedTechs.includes(depId)) {
+                console.log(`Missing dependency: ${depId}`);
+                return false;
+            }
+        }
 
-  function hitCore(m){
-    state.coreHP = Math.max(0, state.coreHP - m.dmg);
-    // 击中核心奖励少量金币
-    state.goldFloat += 5;
-  }
+        profile.techPoints -= techData.cost;
+        profile.unlockedTechs.push(techId);
 
-  function damageMonster(m, dmg){
-    // 隐身不减伤，只是更难被锁定
-    m.hp -= dmg;
-    if(m.hp<=0){
-      m.alive = false;
-      m.selected = false;
-      if(state.selectedMonsterId === m.id) state.selectedMonsterId = null;
+        // Apply the payload immediately to the profile
+        const payload = techData.payload;
+        if (techData.type === 'UNLOCK_UNIT') {
+            if (!profile.unlockedUnits.includes(payload.unitId)) {
+                profile.unlockedUnits.push(payload.unitId);
+            }
+        } else if (techData.type === 'PERMANENT_UPGRADE') {
+            // This part gets complex and requires a robust way to merge upgrades
+            // For now, we assume a simple structure.
+            if (!profile.permanentUpgrades[payload.target]) {
+                profile.permanentUpgrades[payload.target] = {};
+            }
+            // ... logic to apply payload ...
+        }
+
+        savePlayerProfile(profile);
+        console.log(`Tech ${techId} purchased.`);
+        return true;
     }
-  }
 
-  // 冷却条
-  function updateCooldownBars(){
-    // 单位
-    unitButtons.forEach(btn=>{
-      const type = btn.dataset.type;
-      const cd = clamp(state.unitCd[type],0,1.5);
-      const bar = btn.querySelector('.cooldown-bar');
-      const ratio = (type==='goblin'?0.4: type==='assassin'?0.7:1.0);
-      const p = clamp(cd/ratio, 0, 1);
-      bar.style.height = (p*100)+'%';
-      btn.classList.toggle('disabled', state.gold < UNITS[type].cost || state.unitCd[type]>0);
+
+    // =================================================
+    // --- III. GAME INITIALIZATION & FLOW ---
+    // =================================================
+
+    function initializeGame() {
+        resize();
+        const playerProfile = loadPlayerProfile();
+        gameState.sessionConstants = applyPlayerProfile(playerProfile);
+
+        for (const unitType in gameState.sessionConstants.UNIT_TYPES) {
+            if (playerProfile.unlockedUnits.includes(unitType)) {
+                gameState.unitLevels[unitType] = 0;
+            }
+        }
+        
+        loadLevel(gameState.currentLevelId);
+
+        console.log("Game Initialized. Starting loop.");
+        gameState.running = true;
+        requestAnimationFrame(gameLoop);
+    }
+
+    function loadLevel(levelId) {
+        const level = gameState.sessionConstants.LEVEL_DATA.find(l => l.levelId === levelId);
+        if (!level) {
+            gameOver('ALL_LEVELS_COMPLETE');
+            return;
+        }
+
+        // Reset state for new level
+        gameState.player.units = [];
+        gameState.player.towers = [];
+        gameState.productionQueue = [];
+        gameState.activeEffects = [];
+        gameState.levelTimeLeft = level.timeLimit;
+        gameState.isGameOver = false;
+
+        level.enemySetup.forEach(towerData => {
+            const towerProps = gameState.sessionConstants.TOWER_TYPES[towerData.type];
+            gameState.player.towers.push({
+                ...towerProps,
+                id: `t_${Math.random()}`,
+                position: towerData.position,
+                currentHp: towerProps.hp,
+                attackCd: Math.random() * towerProps.attack.attackSpeed, // Initial random cooldown
+                effects: {}
+            });
+        });
+
+        console.log(`Level ${level.levelId} loaded.`);
+    }
+
+    let lastTime = 0;
+    function gameLoop(currentTime) {
+        if (gameState.isGameOver || !gameState.running) {
+            console.log("Game Over or Paused. Loop stopped.");
+            return;
+        }
+
+        if (!lastTime) lastTime = currentTime;
+        const deltaTime = (currentTime - lastTime) / 1000 * gameState.timeScale;
+        lastTime = currentTime;
+
+        updateTimers(deltaTime);
+        updateProductionQueue(deltaTime);
+        updateActiveEffects(deltaTime);
+        updateAI(deltaTime);
+        renderGame();
+        updateUI();
+        checkEndConditions();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function gameOver(reason) {
+        gameState.isGameOver = true;
+        gameState.running = false;
+        console.log(`Game Over! Reason: ${reason}`);
+
+        const playerProfile = loadPlayerProfile();
+        const rewards = calculateEndGameRewards({ success: false });
+        updatePlayerProfileWithRewards(playerProfile, rewards);
+        savePlayerProfile(playerProfile);
+    }
+
+    function levelComplete() {
+        console.log(`Level ${gameState.currentLevelId} Complete!`);
+        
+        const playerProfile = loadPlayerProfile();
+        const rewards = calculateEndGameRewards({ success: true });
+        updatePlayerProfileWithRewards(playerProfile, rewards);
+        savePlayerProfile(playerProfile);
+
+        gameState.currentLevelId++;
+        loadLevel(gameState.currentLevelId);
+    }
+
+
+    // =================================================
+    // --- IV. CORE GAMEPLAY LOGIC ---
+    // =================================================
+
+    function updateTimers(deltaTime) {
+        gameState.gameTime += deltaTime;
+        gameState.levelTimeLeft -= deltaTime;
+    }
+
+    function updateProductionQueue(deltaTime) {
+        for (let i = gameState.productionQueue.length - 1; i >= 0; i--) {
+            const item = gameState.productionQueue[i];
+            item.timeLeft -= deltaTime;
+            if (item.timeLeft <= 0) {
+                spawnUnitOnMap(item.unitType);
+                gameState.productionQueue.splice(i, 1);
+            }
+        }
+    }
+
+    function updateActiveEffects(deltaTime) {
+        for (let i = gameState.activeEffects.length - 1; i >= 0; i--) {
+            const effect = gameState.activeEffects[i];
+            effect.duration -= deltaTime;
+
+            // Apply continuous effects
+            if (effect.type === 'HEAL_OVER_TIME') {
+                const affectedUnits = gameState.player.units.filter(u => dist(effect.position.x, effect.position.y, u.position.x, u.position.y) <= effect.radius);
+                affectedUnits.forEach(u => {
+                    u.currentHp = Math.min(u.hp, u.currentHp + effect.amountPerSecond * deltaTime);
+                });
+            }
+
+            if (effect.duration <= 0) {
+                // Cleanup expired effects
+                if (effect.type === 'DISABLE_ATTACK') {
+                    const affectedTowers = gameState.player.towers.filter(t => dist(effect.position.x, effect.position.y, t.position.x, t.position.y) <= effect.radius);
+                    affectedTowers.forEach(t => {
+                        delete t.effects.disabled;
+                    });
+                }
+                gameState.activeEffects.splice(i, 1);
+            }
+        }
+    }
+
+    function updateAI(deltaTime) {
+        // Tower AI
+        gameState.player.towers.forEach(tower => {
+            if(tower.attackCd > 0) tower.attackCd -= deltaTime;
+            if (tower.attackCd > 0) return;
+
+            const target = findTargetFor(tower, gameState.player.units);
+            if (target) {
+                const damage = calculateDamage(tower.attack, target.armorType);
+                target.currentHp -= damage;
+                console.log(`${tower.name} dealt ${damage} to ${target.type}. Target HP: ${target.currentHp}`);
+                tower.attackCd = tower.attack.attackSpeed;
+            }
+        });
+
+        // Unit AI
+        gameState.player.units.forEach(unit => {
+            // 1. Find target
+            const target = findTargetFor(unit, gameState.player.towers);
+            
+            // 2. Move or Attack
+            if (target) {
+                // Target in range, stop and attack
+                if(unit.attackCd > 0) unit.attackCd -= deltaTime;
+                if (unit.attackCd <= 0) {
+                    const damage = calculateDamage(unit.attack, target.armorType);
+                    target.currentHp -= damage;
+                    console.log(`${unit.name} dealt ${damage} to ${target.name}. Target HP: ${target.currentHp}`);
+                    unit.attackCd = unit.attack.attackSpeed;
+                }
+            } else {
+                // No target, move along path
+                if (unit.next) {
+                    const n = MAP_NODES[unit.next];
+                    const dx = n.x - unit.position.x, dy = n.y - unit.position.y;
+                    const d = Math.hypot(dx, dy);
+                    const spd = unit.speed * 100; // Adjust speed scale
+                    const mv = spd * deltaTime;
+                    if (d <= mv) {
+                        unit.position.x = n.x;
+                        unit.position.y = n.y;
+                        arriveNode(unit, n.id);
+                    } else {
+                        unit.position.x += dx / d * mv;
+                        unit.position.y += dy / d * mv;
+                    }
+                }
+            }
+        });
+    }
+
+    function checkEndConditions() {
+        if (gameState.levelTimeLeft <= 0) {
+            gameOver('TIME_OUT');
+        }
+        if (gameState.player.towers.length > 0 && gameState.player.towers.every(t => t.currentHp <= 0)) {
+            levelComplete();
+        }
+    }
+
+
+    // =================================================
+    // --- V. ACTION & HELPER FUNCTIONS ---
+    // =================================================
+
+    function purchaseUnit(unitType) {
+        const unitData = gameState.sessionConstants.UNIT_TYPES[unitType];
+        const currentLevel = gameState.unitLevels[unitType];
+        const cost = unitData.upgradeTree[currentLevel].cost;
+
+        if (gameState.player.resources >= cost) {
+            gameState.player.resources -= cost;
+            gameState.productionQueue.push({
+                unitType: unitType,
+                timeLeft: unitData.productionTime,
+                totalTime: unitData.productionTime
+            });
+            console.log(`Purchased ${unitType}.`);
+        }
+    }
+
+    function spawnUnitOnMap(unitType) {
+        const unitData = gameState.sessionConstants.UNIT_TYPES[unitType];
+        const currentLevel = gameState.unitLevels[unitType];
+        const stats = unitData.upgradeTree[currentLevel];
+
+        const newUnit = {
+            ...stats,
+            id: `u_${Math.random()}`,
+            type: unitType,
+            name: unitData.name,
+            level: currentLevel,
+            currentHp: stats.hp,
+            position: { ...MAP_NODES.S }, // Start at S node
+            prev: 'S',
+            next: MAP_NODES['S'].next,
+            color: unitData.color,
+            r: unitData.r,
+            tags: unitData.tags,
+            armorType: unitData.armorType,
+            attack: unitData.attack,
+            attackCd: unitData.attack.attackSpeed, // Start with full cooldown
+            buffs: {},
+            effects: {}
+        };
+        gameState.player.units.push(newUnit);
+        console.log(`${unitType} spawned at level ${currentLevel}.`);
+    }
+
+    function calculateDamage(attack, targetArmorType) {
+        const modifier = gameState.sessionConstants.DAMAGE_MODIFIERS[attack.damageType]?.[targetArmorType] ?? 1.0;
+        return attack.damage * modifier;
+    }
+
+    function dist(a,b,c,d){ const dx=a-c, dy=b-d; return Math.hypot(dx,dy); }
+
+    function activateTacticalSkill(skillId, position) {
+        const skillData = gameState.sessionConstants.TACTICAL_SKILLS[skillId];
+        if (!skillData) return;
+
+        const now = gameState.gameTime;
+        if ((gameState.skillCooldowns[skillId] || 0) > now) {
+            console.log(`${skillData.name} is on cooldown.`);
+            return;
+        }
+        if (gameState.player.resources < skillData.cost) {
+            console.log(`Not enough resources for ${skillData.name}.`);
+            return;
+        }
+
+        gameState.player.resources -= skillData.cost;
+        gameState.skillCooldowns[skillId] = now + skillData.cooldown;
+
+        skillData.effects.forEach(effectInfo => {
+            const effect = { ...effectInfo, position, startTime: now, endTime: now + effectInfo.duration };
+            gameState.activeEffects.push(effect);
+
+            // Apply instant effects
+            if (effect.type === 'DISABLE_ATTACK') {
+                 const affectedTowers = gameState.player.towers.filter(t => dist(position.x, position.y, t.position.x, t.position.y) <= effect.radius);
+                 affectedTowers.forEach(t => {
+                     t.effects.disabled = true;
+                 });
+            } else if (effect.type === 'DAMAGE_SHIELD') {
+                // This would be handled in the damage calculation logic
+            }
+        });
+        console.log(`Activated skill: ${skillData.name}`);
+    }
+
+    function findTargetFor(attacker, potentialTargets) {
+        if (attacker.effects && attacker.effects.disabled) return null; // Cannot target if disabled
+
+        let bestTarget = null;
+        let minDistance = Infinity;
+
+        // Attacker's position can be either {x, y} or {position: {x, y}}
+        const attackerPos = attacker.position || attacker;
+
+        for (const target of potentialTargets) {
+            if (!target.currentHp || target.currentHp <= 0) continue;
+
+            const targetPos = target.position || target;
+
+            // 1. Check range
+            const distance = dist(attackerPos.x, attackerPos.y, targetPos.x, targetPos.y);
+            if (distance > attacker.attack.range) continue;
+
+            // 2. Check tags if `canTarget` exists
+            if (attacker.attack.canTarget) {
+                const targetTags = target.tags || [];
+                const canAttack = attacker.attack.canTarget.some(tag => targetTags.includes(tag));
+                if (!canAttack) continue;
+            }
+
+            // 3. Select closest valid target
+            if (distance < minDistance) {
+                minDistance = distance;
+                bestTarget = target;
+            }
+        }
+        return bestTarget;
+    }
+
+    function updateUI() {
+        goldText.textContent = Math.floor(gameState.player.resources);
+        // Add other UI updates here, e.g., energy, timer, etc.
+        timerText.textContent = new Date(gameState.levelTimeLeft * 1000).toISOString().substr(14, 5);
+    }
+
+    function renderGame() {
+        // Background
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+
+        // Ground
+        ctx.fillStyle = '#d6e0e7';
+        ctx.fillRect(0,0,1000,560);
+
+        // Path
+        drawPath();
+
+        // Core
+        drawCore();
+
+        // Towers
+        for(const t of gameState.player.towers){
+          drawTower(t);
+        }
+
+        // Units
+        for(const m of gameState.player.units){
+          drawMonster(m);
+        }
+
+        ctx.restore();
+    }
+
+    function drawPath(){
+        ctx.lineCap='round'; ctx.lineJoin='round';
+        ctx.lineWidth = 16;
+        ctx.strokeStyle = '#b8c2c9';
+        // This needs to be adapted if map edges are defined in LEVEL_DATA
+        // For now, we assume a static path for rendering
+    }
+
+    function drawCore(){
+        const n = MAP_NODES.CORE;
+        ctx.fillStyle = '#ff3b3b';
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 18, 0, Math.PI*2); ctx.fill();
+    }
+
+    function drawTower(t){
+        ctx.save();
+        ctx.translate(t.position.x, t.position.y);
+        ctx.fillStyle='#6e6e6e';
+        ctx.fillRect(-10, -6, 20, 12);
+        ctx.fillStyle= t.color || '#2f4f4f';
+        ctx.fillRect(-6, -16, 12, 20);
+        ctx.restore();
+    }
+
+    function drawMonster(m){
+        ctx.save();
+        ctx.translate(m.position.x, m.position.y);
+        
+        // Body
+        ctx.fillStyle = m.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, m.r, 0, Math.PI*2);
+        ctx.fill();
+
+        // Health bar
+        const w = m.r * 2 + 8, h = 5;
+        const x = -w/2, y = -m.r - 12;
+        const p = Math.max(0, m.currentHp / m.hp);
+        ctx.fillStyle='#222'; ctx.fillRect(x-1,y-1,w+2,h+2);
+        ctx.fillStyle='#003300'; ctx.fillRect(x,y,w,h);
+        ctx.fillStyle='#66dd66'; ctx.fillRect(x,y,w*p,h);
+        
+        ctx.restore();
+    }
+
+    function calculateEndGameRewards(result) {
+        return result.success ? { xp: 500 } : { xp: 100 };
+    }
+
+    function updatePlayerProfileWithRewards(profile, rewards) {
+        profile.xp += rewards.xp;
+        
+        const xpForNextLevel = profile.level * 1000;
+        if (profile.xp >= xpForNextLevel) {
+            profile.level++;
+            profile.xp -= xpForNextLevel;
+            profile.techPoints += 1; // Gain 1 tech point on level up
+            console.log(`Level up! Reached level ${profile.level}.`);
+        }
+    }
+
+    // =================================================
+    // --- VI. ENTRY POINT ---
+    // =================================================
+    
+    // --- Event Listeners ---
+    startBtn.addEventListener('click', initializeGame);
+
+    unitButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const unitType = btn.dataset.type;
+            purchaseUnit(unitType);
+        });
     });
-    // 技能
-    skillButtons.forEach(btn=>{
-      const skill = btn.dataset.skill;
-      const cd = state.skillCd[skill];
-      const bar = btn.querySelector('.cooldown-bar');
-      const p = clamp(cd / SKILLS[skill].cd, 0, 1);
-      bar.style.height = (p*100)+'%';
-      btn.classList.toggle('disabled', state.energy < SKILLS[skill].cost || state.skillCd[skill]>0);
+
+    skillButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const skillId = btn.dataset.skill;
+            // For skills that need targeting, we'd set a state here
+            // For now, we assume area-targeting at a fixed point
+            activateTacticalSkill(skillId, {x: 400, y: 280});
+        });
     });
-  }
 
-  // 绘制
-  function draw(){
-    // 背景
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.save();
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scale, scale);
-
-    // 地面
-    ctx.fillStyle = '#d6e0e7';
-    ctx.fillRect(0,0,WORLD.w,WORLD.h);
-
-    // 路面
-    drawPath();
-
-    // 核心
-    drawCore();
-
-    // 塔
-    for(const t of state.towers){
-      drawTower(t);
-    }
-
-    // 子弹
-    for(const b of state.bullets){
-      drawBullet(b);
-    }
-
-    // 怪物
-    for(const m of state.monsters){
-      drawMonster(m);
-    }
-
-    ctx.restore();
-  }
-
-  function drawPath(){
-    // 阴影
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    ctx.lineWidth = 18;
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    for(const [a,b] of MAP.edges){
-      const na = nodes[a], nb = nodes[b];
-      ctx.beginPath();
-      ctx.moveTo(na.x+2,na.y+2);
-      ctx.lineTo(nb.x+2,nb.y+2);
-      ctx.stroke();
-    }
-    // 路面
-    ctx.lineWidth = 16;
-    ctx.strokeStyle = '#b8c2c9';
-    for(const [a,b] of MAP.edges){
-      const na = nodes[a], nb = nodes[b];
-      ctx.beginPath();
-      ctx.moveTo(na.x,na.y);
-      ctx.lineTo(nb.x,nb.y);
-      ctx.stroke();
-    }
-    // 分叉节点点缀
-    for(const f of forks){
-      const n = nodes[f];
-      ctx.beginPath();
-      ctx.fillStyle='#e8edf2';
-      ctx.arc(n.x, n.y, 10, 0, Math.PI*2);
-      ctx.fill();
-      ctx.strokeStyle='#9aa9b5';
-      ctx.lineWidth=2;
-      ctx.stroke();
-    }
-  }
-
-  function drawCore(){
-    const n = nodes.CORE;
-    // 背板
-    ctx.fillStyle = '#ffe8e8';
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, 18, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#cc6666';
-    ctx.lineWidth=3; ctx.stroke();
-    // 宝石
-    ctx.fillStyle = '#ff3b3b';
-    ctx.beginPath();
-    ctx.moveTo(n.x, n.y-12);
-    ctx.lineTo(n.x+10, n.y);
-    ctx.lineTo(n.x, n.y+12);
-    ctx.lineTo(n.x-10, n.y);
-    ctx.closePath(); ctx.fill();
-    // 血条
-    const w = 80, h = 8;
-    const x = n.x - w/2, y = n.y - 30;
-    const p = clamp(state.coreHP/state.coreHPMax, 0, 1);
-    ctx.fillStyle = '#222'; ctx.fillRect(x-1,y-1,w+2,h+2);
-    ctx.fillStyle = '#550000'; ctx.fillRect(x,y,w,h);
-    ctx.fillStyle = '#ff5555'; ctx.fillRect(x,y, w*p, h);
-    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.strokeRect(x-1,y-1,w+2,h+2);
-  }
-
-  function drawTower(t){
-    // 范围阴影略，只画塔体
-    ctx.save();
-    ctx.translate(t.x,t.y);
-    // 底座
-    ctx.fillStyle='#6e6e6e';
-    ctx.fillRect(-10, -6, 20, 12);
-    // 塔身
-    ctx.fillStyle=t.color;
-    ctx.fillRect(-6, -16, 12, 20);
-    // 炮口/箭口
-    ctx.fillStyle='#222';
-    ctx.fillRect(-3, -22, 6, 6);
-    ctx.restore();
-  }
-
-  function drawMonster(m){
-    // 影子
-    ctx.fillStyle='rgba(0,0,0,0.15)';
-    ctx.beginPath(); ctx.ellipse(m.x, m.y+4, m.r*0.9, m.r*0.5, 0, 0, Math.PI*2); ctx.fill();
-
-    // 边框颜色（选中）
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = m.selected ? '#ffd43b' : '#000';
-
-    // 身体（隐身半透明）
-    ctx.beginPath();
-    ctx.fillStyle = m.color;
-    if(m.stealth) ctx.globalAlpha = 0.6;
-    ctx.arc(m.x, m.y, m.r, 0, Math.PI*2);
-    ctx.fill();
-    ctx.globalAlpha = 1.0;
-    ctx.stroke();
-
-    // 冲锋闪光
-    if(m.flash){
-      const a = Math.max(0, m.flash.t / m.flash.full);
-      ctx.beginPath();
-      ctx.strokeStyle = m.flash.color;
-      ctx.globalAlpha = a*0.8;
-      ctx.arc(m.x, m.y, m.r+4, 0, Math.PI*2);
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
-    }
-
-    // 血条
-    const w= Math.max(24, m.r*2+8), h=5;
-    const x = m.x - w/2, y = m.y - m.r - 12;
-    const p = clamp(m.hp/m.maxHp, 0, 1);
-    ctx.fillStyle='#222'; ctx.fillRect(x-1,y-1,w+2,h+2);
-    ctx.fillStyle='#003300'; ctx.fillRect(x,y,w,h);
-    ctx.fillStyle='#66dd66'; ctx.fillRect(x,y,w*p,h);
-    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.strokeRect(x-1,y-1,w+2,h+2);
-
-    // 状态图标（减速/加速/隐身）
-    let iconX = x;
-    if(m.buffs.slow<1.0){
-      drawStatusIcon(iconX, y-10, '#00c2ff'); iconX += 12;
-    }
-    if(m.buffs.charge>1.0){
-      drawStatusIcon(iconX, y-10, '#ffcc00'); iconX += 12;
-    }
-    if(m.stealth){
-      drawStatusIcon(iconX, y-10, '#444'); iconX += 12;
-    }
-  }
-
-  function drawStatusIcon(x,y,color){
-    ctx.fillStyle=color; ctx.beginPath(); ctx.arc(x+6,y+6,4,0,Math.PI*2); ctx.fill();
-    ctx.strokeStyle='#000'; ctx.strokeRect(x+1,y+1,10,10);
-  }
-
-  function drawBullet(b){
-    ctx.save();
-    ctx.translate(b.x,b.y);
-    if(b.type==='cannon'){
-      ctx.fillStyle = '#553300';
-      ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
-    }else if(b.type==='frost'){
-      ctx.fillStyle = '#66d9ff';
-      ctx.fillRect(-3,-3,6,6);
-    }else{
-      ctx.fillStyle = '#333';
-      ctx.fillRect(-2,-5,4,10);
-    }
-    ctx.restore();
-  }
-
-  // 初始化
-  resize();
-  resetState(difficultySel.value);
-  requestAnimationFrame(loop);
-
-  // 防止滚动影响
-  document.addEventListener('gesturestart', e=> e.preventDefault());
-  document.addEventListener('touchmove', function(e){
-    if(e.target.closest('#game')) e.preventDefault();
-  }, {passive:false});
+    // Initial setup and start
+    initializeGame();
 
 })();
